@@ -41,17 +41,45 @@ with tab1:
                 st.session_state.raw_data = df_raw
                 st.success("File caricati e uniti con successo!")
                 
-                # Visualizza anteprima dei dati grezzi estratti
+                # Visualizza anteprima dei dati grezzi estratti in modo sicuro
                 st.subheader("Anteprima Dati Grezzi (Element % Results)")
-                st.dataframe(df_raw[['Name', 'N', 'C', 'H', 'S']].head(), use_container_width=True)
+                preview_cols = [c for c in ['Name', 'Weight', 'N', 'C', 'H', 'S'] if c in df_raw.columns]
+                st.dataframe(df_raw[preview_cols].head(), use_container_width=True)
                 
-                # Selezione dei sample da analizzare
+                # Selezione dei sample da analizzare con Tabella Interattiva (Data Editor)
                 all_samples = df_raw['Name'].dropna().unique().tolist()
-                selected = st.multiselect(
-                    "Scegli i Sample che desideri analizzare:", 
-                    options=all_samples,
-                    default=all_samples
+                
+                st.subheader("✅ Selezione e Ordinamento Sample")
+                st.write("Spunta la casella 'Seleziona' per includere il sample. Puoi cambiare il numero nella colonna 'Ordine' e cliccare sull'intestazione per riordinarli in base alle tue preferenze.")
+                
+                # Inizializza o aggiorna il dataframe di selezione in sessione
+                if 'sample_selection_df' not in st.session_state or set(st.session_state.get('last_all_samples', [])) != set(all_samples):
+                    st.session_state.sample_selection_df = pd.DataFrame({
+                        "Seleziona": [True] * len(all_samples),
+                        "Ordine": list(range(1, len(all_samples) + 1)),
+                        "Sample": all_samples
+                    })
+                    st.session_state.last_all_samples = all_samples
+
+                # Editor tabellare interattivo
+                edited_df = st.data_editor(
+                    st.session_state.sample_selection_df,
+                    column_config={
+                        "Seleziona": st.column_config.CheckboxColumn("Seleziona", default=True),
+                        "Ordine": st.column_config.NumberColumn("Ordine", help="Cambia il numero per ordinare i sample", min_value=1, step=1),
+                        "Sample": st.column_config.TextColumn("Nome Sample", disabled=True) # Disabilitato per non far modificare accidentalmente il nome
+                    },
+                    hide_index=True,
+                    use_container_width=True
                 )
+                
+                # Salva le modifiche in sessione
+                st.session_state.sample_selection_df = edited_df
+                
+                # Estraiamo solo i sample selezionati e li ordiniamo in base al numero 'Ordine'
+                sorted_df = edited_df[edited_df["Seleziona"] == True].sort_values(by="Ordine")
+                selected = sorted_df["Sample"].tolist()
+                
                 st.session_state.selected_samples = selected
 
 # --- TAB 2: Calcoli ---
