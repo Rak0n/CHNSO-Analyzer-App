@@ -3,7 +3,7 @@ import numpy as np
 
 def process_data(df, selected_samples, am_dict, ignore_am):
     """
-    Filtra, raggruppa e calcola Media, SD e O2.
+    Filtra, raggruppa e calcola Media, SD e O.
     Rispetta rigorosamente l'ordine personalizzato imposto dall'utente.
     """
     # Filtro sample
@@ -29,36 +29,52 @@ def process_data(df, selected_samples, am_dict, ignore_am):
         if f"{el}_mean" in grouped.columns:
             grouped[f"{el}_mean"] = grouped[f"{el}_mean"].fillna(0)
 
-    # --- Calcolo O2 ---
-    o2_means = []
-    o2_stds = []
+    # --- Calcolo Ossigeno (O) ---
+    o_means = []
+    o_stds = []
     
     for _, row in grouped.iterrows():
         name = row['Name']
         
         sum_chns = sum(row.get(f'{el}_mean', 0.0) for el in available_elements)
         var_sum = sum(row.get(f'{el}_std', 0.0)**2 for el in available_elements)
-        sd_o2 = np.sqrt(var_sum)
+        sd_o = np.sqrt(var_sum)
         
         if ignore_am:
-            o2_val = 100 - sum_chns
+            o_val = 100 - sum_chns
         else:
             umidita = am_dict.get(name, {}).get('Umidità', 0.0) or 0.0
             ceneri = am_dict.get(name, {}).get('Ceneri', 0.0) or 0.0
-            o2_val = 100 - sum_chns - umidita - ceneri
+            o_val = 100 - sum_chns - umidita - ceneri
             
-        o2_means.append(max(0, o2_val))
-        o2_stds.append(sd_o2)
+        o_means.append(max(0, o_val))
+        o_stds.append(sd_o)
         
-    grouped['O2_mean'] = o2_means
-    grouped['O2_std'] = o2_stds
+    grouped['O_mean'] = o_means
+    grouped['O_std'] = o_stds
     
+    # Aggiungiamo Moisture e Ash al dataframe 'grouped' per renderli disponibili nei grafici
+    moisture_means = []
+    ash_means = []
+    for n in grouped['Name']:
+        if not ignore_am:
+            moisture_means.append(am_dict.get(n, {}).get('Umidità', 0.0) or 0.0)
+            ash_means.append(am_dict.get(n, {}).get('Ceneri', 0.0) or 0.0)
+        else:
+            moisture_means.append(0.0)
+            ash_means.append(0.0)
+
+    grouped['Moisture_mean'] = moisture_means
+    grouped['Moisture_std'] = 0.0  # Input utente singolo, no deviazione standard
+    grouped['Ash_mean'] = ash_means
+    grouped['Ash_std'] = 0.0
+
     # --- Creazione Foglio 2 (Solo Medie) ---
-    cols_means = ['Name'] + [f"{el}_mean" for el in available_elements] + ['O2_mean']
+    cols_means = ['Name'] + [f"{el}_mean" for el in available_elements] + ['O_mean']
     means_only_df = grouped[cols_means].copy()
     
     rename_dict = {f"{el}_mean": f"{el} (%)" for el in available_elements}
-    rename_dict['O2_mean'] = 'O2 (%)'
+    rename_dict['O_mean'] = 'O (%)'
     means_only_df = means_only_df.rename(columns=rename_dict)
     
     if not ignore_am:
@@ -69,10 +85,15 @@ def process_data(df, selected_samples, am_dict, ignore_am):
     pretty_df = pd.DataFrame()
     pretty_df['Name'] = grouped['Name']
     
-    for el in available_elements + ['O2']:
+    for el in available_elements:
         pretty_df[f"{el} (%)"] = grouped.apply(
             lambda x: f"{x.get(el+'_mean', 0.0):.2f} ± {x.get(el+'_std', 0.0):.2f}", axis=1
         )
+        
+    # Colonna O nel foglio formattato
+    pretty_df["O (%)"] = grouped.apply(
+        lambda x: f"{x.get('O_mean', 0.0):.2f} ± {x.get('O_std', 0.0):.2f}", axis=1
+    )
         
     if not ignore_am:
         pretty_df['Moisture (%)'] = [f"{(am_dict.get(n, {}).get('Umidità', 0.0) or 0.0):.2f}" for n in grouped['Name']]
