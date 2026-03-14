@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100" width="300" height="100">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2ca02c" />
+      <stop offset="100%" stop-color="#1f77b4" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Esagono stilizzato (chimica) -->
+  <polygon points="30,20 60,20 75,45 60,70 30,70 15,45" fill="url(#gradient)" opacity="0.9"/>
+  
+  <!-- Barre dell'istogramma (dati) -->
+  <rect x="25" y="50" width="6" height="15" fill="#ffffff" rx="1"/>
+  <rect x="35" y="40" width="6" height="25" fill="#ffffff" rx="1"/>
+  <rect x="45" y="30" width="6" height="35" fill="#ffffff" rx="1"/>
+  
+  <!-- Testo CHNSO -->
+  <text x="90" y="45" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#333333">CHNSO</text>
+  <text x="92" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="normal" fill="#666666">Analyzer &amp; Dashboard</text>
+</svg>
