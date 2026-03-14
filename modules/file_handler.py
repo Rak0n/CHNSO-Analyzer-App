@@ -8,17 +8,14 @@ def load_excel_files(uploaded_files):
     
     for file in uploaded_files:
         try:
-            # 1. Legge TUTTO il foglio ignorando le intestazioni per avere una matrice pura
+            # 1. Legge TUTTO il foglio come matrice pura (header=None)
             df_raw = pd.read_excel(file, sheet_name="Element % Results", header=None)
             
             header_idx = None
             
-            # 2. Scansiona ogni singola riga per trovare l'intestazione corretta
+            # 2. Scansiona ogni riga finché non trova quella che contiene 'Name' o 'Sample Name'
             for i, row in df_raw.iterrows():
-                # Converte la riga in stringhe minuscole, rimuovendo spazi
                 row_strs = [str(x).strip().lower() for x in row.values]
-                
-                # Se la riga contiene 'name', abbiamo trovato la riga dei titoli
                 if 'name' in row_strs or 'sample name' in row_strs:
                     header_idx = i
                     break
@@ -27,43 +24,47 @@ def load_excel_files(uploaded_files):
                 st.error(f"Errore: Non sono riuscito a trovare la parola 'Name' nel file {file.name}.")
                 continue
                 
-            # 3. Estrae i veri nomi delle colonne dalla riga trovata
-            columns = [str(x).strip() for x in df_raw.iloc[header_idx].values]
+            # 3. Mappatura precisa delle colonne (Reverse Engineering del tuo file)
+            # Il tuo file ha una prima colonna vuota che Pandas legge come 'nan'
+            raw_columns = df_raw.iloc[header_idx].values
+            clean_columns = []
             
-            # 4. Isola solo i dati veri (le righe successive all'intestazione)
+            for idx, col_name in enumerate(raw_columns):
+                col_str = str(col_name).strip()
+                
+                # Se è la colonna del nome, la standardizziamo
+                if col_str.lower() in ['name', 'sample name']:
+                    clean_columns.append('Name')
+                # Se la colonna è vuota (come la colonna 0 del tuo file) diamo un nome fittizio
+                elif col_str.lower() == 'nan' or col_str == '':
+                    clean_columns.append(f"Vuota_{idx}")
+                else:
+                    clean_columns.append(col_str)
+            
+            # 4. Creiamo il dataframe usando i dati da header_idx in poi
             df = df_raw.iloc[header_idx + 1:].copy()
-            df.columns = columns
+            df.columns = clean_columns
             
-            # 5. Rinomina esplicitamente la colonna in 'Name' (nel caso in cui fosse 'Sample Name')
-            for col in df.columns:
-                if str(col).lower() == 'name' or str(col).lower() == 'sample name':
-                    df.rename(columns={col: 'Name'}, inplace=True)
-                    break
-            
-            # 6. Pulisce i dati elementari (trasforma i '-' in celle vuote matematiche)
+            # 5. Pulizia dei valori: Trasformiamo i '-' del tuo strumento in valori numerici nulli (NaN)
             cols_to_clean = ['N', 'C', 'H', 'S']
             for col in cols_to_clean:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                     
-            all_data.append(df)
+            # 6. Pulizia di righe vuote strumentali (ESCLUSIVA PER QUESTO FILE)
+            if 'Name' in df.columns:
+                df = df.dropna(subset=['Name'])
+                df = df[df['Name'].astype(str).str.lower() != 'nan']
+                all_data.append(df)
+            else:
+                st.error(f"Errore: Impossibile definire la colonna 'Name' nel file {file.name}")
             
         except Exception as e:
             st.error(f"Errore imprevisto nella lettura del file {file.name}: {e}")
             
-    # --- Unione finale dei file ---
+    # --- Unione finale dei file validi ---
     if all_data:
         combined_df = pd.concat(all_data, ignore_index=True)
-        
-        # Sicurezza assoluta: verifica che 'Name' esista prima di operare
-        if 'Name' in combined_df.columns:
-            # Elimina le righe vuote strumentali
-            combined_df = combined_df.dropna(subset=['Name'])
-            # Elimina eventuali righe in cui Name è letto come stringa 'nan'
-            combined_df = combined_df[combined_df['Name'].astype(str).str.lower() != 'nan']
-        else:
-            st.error("Errore critico post-unione: La colonna 'Name' è andata persa.")
-            
         return combined_df
     else:
         return pd.DataFrame()
