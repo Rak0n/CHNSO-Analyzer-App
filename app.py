@@ -34,7 +34,7 @@ with tab1:
 
     if uploaded_files:
         with st.spinner("Lettura dei file in corso..."):
-            # Carica e unisce i file (usa la cache per efficienza)
+            # Carica e unisce i file
             df_raw = file_handler.load_excel_files(uploaded_files)
             
             if not df_raw.empty:
@@ -46,7 +46,6 @@ with tab1:
                 st.subheader("✅ 1. Selezione Sample")
                 st.write("Spunta la casella 'Seleziona' per includere il sample nell'analisi. Le caselle sono inizialmente vuote.")
                 
-                # INIZIALIZZAZIONE SICURA: previene il salto dello scroll, i doppi click e la perdita di focus
                 if 'selection_state' not in st.session_state or st.session_state.get('last_file') != df_raw.shape[0]:
                     st.session_state.selection_state = pd.DataFrame({
                         "Seleziona": [False] * len(all_samples),
@@ -54,7 +53,6 @@ with tab1:
                     })
                     st.session_state.last_file = df_raw.shape[0]
 
-                # Tabella 1: Solo Selezione. L'uso di "key" isola il componente ed evita ricaricamenti molesti
                 edited_selection = st.data_editor(
                     st.session_state.selection_state,
                     column_config={
@@ -66,21 +64,16 @@ with tab1:
                     key="editor_selezioni"
                 )
                 
-                # Estraiamo i sample che l'utente ha spuntato
                 selected_unsorted = edited_selection[edited_selection["Seleziona"]]["Sample"].tolist()
                 
-                # Tabella 2: Anteprima e Ordinamento (visibile solo se ci sono sample selezionati)
                 if selected_unsorted:
                     st.subheader("🔢 2. Anteprima Dati e Ordinamento")
                     st.write("Qui vedi i sample scelti. Modifica il numero nella colonna 'Ordine' e clicca sull'intestazione per riordinare l'export.")
                     
-                    # Aggiorniamo la tabella ordine SOLO se l'utente seleziona/deseleziona qualcosa.
-                    # Questo previene il fastidioso bug della cancellazione del testo mentre l'utente digita il numero.
                     if 'order_state' not in st.session_state or set(st.session_state.get('last_selected', [])) != set(selected_unsorted):
                         df_unique = pd.DataFrame({"Name": selected_unsorted})
                         df_unique["Ordine"] = range(1, len(selected_unsorted) + 1)
                         
-                        # Aggiungiamo l'anteprima (prendiamo la prima riga utile del sample come contesto)
                         preview_cols = [c for c in ['Weight', 'N', 'C', 'H', 'S'] if c in df_raw.columns]
                         df_first_raw = df_raw.drop_duplicates(subset=['Name']).copy()
                         df_order_preview = pd.merge(df_unique, df_first_raw[['Name'] + preview_cols], on='Name', how='left')
@@ -88,7 +81,6 @@ with tab1:
                         st.session_state.order_state = df_order_preview
                         st.session_state.last_selected = selected_unsorted
                         
-                    # Configurazione colonne: blocchiamo TUTTO tranne la colonna "Ordine"
                     col_configs = {
                         "Ordine": st.column_config.NumberColumn("Ordine", min_value=1, step=1),
                         "Name": st.column_config.TextColumn("Nome Sample", disabled=True)
@@ -96,7 +88,6 @@ with tab1:
                     for col in [c for c in ['Weight', 'N', 'C', 'H', 'S'] if c in df_raw.columns]:
                         col_configs[col] = st.column_config.Column(disabled=True)
 
-                    # Mostriamo la tabella
                     edited_order = st.data_editor(
                         st.session_state.order_state,
                         column_config=col_configs,
@@ -105,7 +96,9 @@ with tab1:
                         key="editor_ordine"
                     )
                     
-                    # Ordiniamo la lista finale in base al numero inserito dall'utente
+                    # FIX 1: Forza la colonna 'Ordine' a essere Numerica, evitando l'ordinamento "1, 10, 11, 2"
+                    edited_order["Ordine"] = pd.to_numeric(edited_order["Ordine"], errors='coerce').fillna(999)
+                    
                     st.session_state.selected_samples = edited_order.sort_values(by="Ordine")["Name"].tolist()
                 else:
                     st.info("👆 Seleziona almeno un sample nella tabella sopra per sbloccare l'anteprima e ordinarli.")
@@ -116,13 +109,11 @@ with tab2:
     if st.session_state.raw_data is not None and st.session_state.selected_samples:
         st.header("Impostazioni Ceneri e Umidità")
         
-        # Opzione globale per trascurare ceneri/umidità
         ignore_ash_moisture = st.checkbox(
             "🚫 Trascura Ceneri e Umidità per questa sessione (Calcola O2 solo come 100 - CHNS)", 
             value=False
         )
         
-        # Griglia di input dinamica
         ash_moisture_data = ui_components.ash_moisture_form(
             st.session_state.selected_samples, 
             ignore_ash_moisture
@@ -138,19 +129,23 @@ with tab2:
                     ignore_ash_moisture
                 )
                 
-                # Salvataggio in session_state per i grafici
+                # FIX 2: Estraiamo i Dati Grezzi (per Foglio 1) imponendo forzatamente il tuo ordine
+                df_raw_filtered = st.session_state.raw_data[st.session_state.raw_data['Name'].isin(st.session_state.selected_samples)].copy()
+                df_raw_filtered['__sort_col'] = pd.Categorical(df_raw_filtered['Name'], categories=st.session_state.selected_samples, ordered=True)
+                df_raw_filtered = df_raw_filtered.sort_values('__sort_col').drop(columns=['__sort_col'])
+                
+                # Salvataggio in session_state
                 st.session_state.processed_data = {
                     'stats': df_stats,
                     'pretty': df_pretty,
                     'means': df_means_only,
-                    'raw_filtered': st.session_state.raw_data[st.session_state.raw_data['Name'].isin(st.session_state.selected_samples)],
+                    'raw_filtered': df_raw_filtered,
                     'ignore_am': ignore_ash_moisture
                 }
                 
                 st.success("Calcoli completati!")
                 st.dataframe(df_pretty, use_container_width=True)
                 
-                # Pulsante di Download
                 excel_buffer = file_handler.create_excel_download(
                     st.session_state.processed_data['raw_filtered'],
                     df_means_only,
