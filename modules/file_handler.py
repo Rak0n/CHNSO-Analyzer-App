@@ -8,61 +8,78 @@ def load_excel_files(uploaded_files):
     
     for file in uploaded_files:
         try:
-            # 1. Legge TUTTO il foglio come matrice pura (header=None)
-            df_raw = pd.read_excel(file, sheet_name="Element % Results", header=None)
+            # 1. Forza la lettura SOLO del PRIMO foglio (sheet_name=0)
+            # Legge come matrice grezza per non farsi ingannare dai metadati
+            df_raw = pd.read_excel(file, sheet_name=0, header=None)
             
             header_idx = None
             
-            # 2. Scansiona ogni riga finché non trova quella che contiene 'Name' o 'Sample Name'
+            # 2. Scansiona ogni riga finché non trova la riga delle intestazioni ("Name")
             for i, row in df_raw.iterrows():
                 row_strs = [str(x).strip().lower() for x in row.values]
-                if 'name' in row_strs or 'sample name' in row_strs:
+                if 'name' in row_strs:
                     header_idx = i
                     break
             
             if header_idx is None:
-                st.error(f"Errore: Non sono riuscito a trovare la parola 'Name' nel file {file.name}.")
+                st.error(f"Errore: Non sono riuscito a trovare la colonna 'Name' nel file {file.name}.")
                 continue
                 
-            # 3. Mappatura precisa delle colonne (Reverse Engineering del tuo file)
-            # Il tuo file ha una prima colonna vuota che Pandas legge come 'nan'
+            # 3. Mappatura SU MISURA basata sull'esatto layout che mi hai fornito
+            # Layout: Pos.# | Type | Name | Weight (mg) | N % | C % | H % | S % | O %
             raw_columns = df_raw.iloc[header_idx].values
             clean_columns = []
             
             for idx, col_name in enumerate(raw_columns):
                 col_str = str(col_name).strip()
+                col_lower = col_str.lower()
                 
-                # Se è la colonna del nome, la standardizziamo
-                if col_str.lower() in ['name', 'sample name']:
+                # Associazione chirurgica
+                if col_lower == 'name':
                     clean_columns.append('Name')
-                # Se la colonna è vuota (come la colonna 0 del tuo file) diamo un nome fittizio
-                elif col_str.lower() == 'nan' or col_str == '':
-                    clean_columns.append(f"Vuota_{idx}")
+                elif col_lower == 'weight (mg)':
+                    clean_columns.append('Weight')
+                elif col_lower == 'n %':
+                    clean_columns.append('N')
+                elif col_lower == 'c %':
+                    clean_columns.append('C')
+                elif col_lower == 'h %':
+                    clean_columns.append('H')
+                elif col_lower == 's %':
+                    clean_columns.append('S')
+                elif col_lower == 'type':
+                    clean_columns.append('Type')
                 else:
-                    clean_columns.append(col_str)
+                    # Colonne vuote o la colonna O % vengono messe in un cestino virtuale
+                    clean_columns.append(f"Ignora_{idx}")
             
-            # 4. Creiamo il dataframe usando i dati da header_idx in poi
+            # 4. Applica i nomi puliti e taglia i metadati in alto (Autorun, Date, ecc.)
             df = df_raw.iloc[header_idx + 1:].copy()
             df.columns = clean_columns
             
-            # 5. Pulizia dei valori: Trasformiamo i '-' del tuo strumento in valori numerici nulli (NaN)
+            # 5. GARANZIA COLONNE
+            # Assicuriamoci che N, C, H, S esistano sempre, anche se vuoti
+            for required_col in ['N', 'C', 'H', 'S']:
+                if required_col not in df.columns:
+                    df[required_col] = 0.0
+            
+            # 6. Conversione del "-" in "0" come richiesto
             cols_to_clean = ['N', 'C', 'H', 'S']
             for col in cols_to_clean:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                # Se c'è un trattino, diventa 0. Qualsiasi altra stringa strana diventa NaN e poi 0
+                df[col] = df[col].astype(str).str.strip().replace('-', '0')
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
                     
-            # 6. Pulizia di righe vuote strumentali (ESCLUSIVA PER QUESTO FILE)
+            # 7. Filtraggio finale (teniamo solo le righe con un Sample Name valido)
             if 'Name' in df.columns:
                 df = df.dropna(subset=['Name'])
                 df = df[df['Name'].astype(str).str.lower() != 'nan']
                 all_data.append(df)
-            else:
-                st.error(f"Errore: Impossibile definire la colonna 'Name' nel file {file.name}")
             
         except Exception as e:
-            st.error(f"Errore imprevisto nella lettura del file {file.name}: {e}")
+            st.error(f"Errore nella lettura del file {file.name}: {e}")
             
-    # --- Unione finale dei file validi ---
+    # --- Unione finale dei file ---
     if all_data:
         combined_df = pd.concat(all_data, ignore_index=True)
         return combined_df
@@ -77,7 +94,7 @@ def create_excel_download(df_raw, df_means, df_pretty, ignore_am):
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         
-        # Foglio 1: Raw Data
+        # Foglio 1: Raw Data (esportiamo solo da Type a S, saltando le colonne ignorate)
         cols_raw = ['Type', 'Name', 'Weight', 'N', 'C', 'H', 'S']
         available_cols = [c for c in cols_raw if c in df_raw.columns]
         
@@ -89,7 +106,7 @@ def create_excel_download(df_raw, df_means, df_pretty, ignore_am):
         # Foglio 3: Formattato (Media ± SD)
         df_pretty.to_excel(writer, sheet_name='3 - Summary Formatted', index=False)
         
-        # Estetica
+        # Estetica del file scaricato
         workbook = writer.book
         header_format = workbook.add_format({
             'bold': True, 'text_wrap': True, 'valign': 'top', 
