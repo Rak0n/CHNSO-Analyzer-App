@@ -68,7 +68,7 @@ with tab1:
                 
                 if selected_unsorted:
                     st.subheader("🔢 2. Anteprima Dati e Ordinamento")
-                    st.write("Qui vedi i sample scelti. Modifica il numero nella colonna 'Ordine' e clicca sull'intestazione per riordinare l'export.")
+                    st.write("Qui vedi i sample scelti. Modifica il numero nella colonna 'Ordine' (doppio clic su cella) e clicca sull'intestazione per riordinare l'export. Poi passa al Modulo2 per il report dettagliato.")
                     
                     if 'order_state' not in st.session_state or set(st.session_state.get('last_selected', [])) != set(selected_unsorted):
                         df_unique = pd.DataFrame({"Name": selected_unsorted})
