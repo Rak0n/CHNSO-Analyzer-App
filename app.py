@@ -13,8 +13,20 @@ if 'processed_data' not in st.session_state:
 if 'selected_samples' not in st.session_state:
     st.session_state.selected_samples = []
 
-st.title("🧪 CHNSO Analyzer & Dashboard")
-st.markdown("Analisi automatizzata dei dati elementari, calcolo dell'Ossigeno ed esportazione avanzata.")
+# --- Layout Intestazione con Logo ---
+col1, col2 = st.columns([1, 5])
+with col1:
+    try:
+        # Carica il logo vettoriale dalla cartella assets
+        st.image("assets/logo.svg")
+    except:
+        st.title("🧪") # Fallback se il logo non viene trovato
+        
+with col2:
+    st.title("CHNSO Analyzer")
+    st.markdown("Analisi automatizzata dei dati elementari, calcolo dell'Ossigeno ed esportazione avanzata.")
+
+st.divider() # Una bella linea di separazione prima delle schede
 
 # Creazione delle schede (Tabs)
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -68,7 +80,7 @@ with tab1:
                 
                 if selected_unsorted:
                     st.subheader("🔢 2. Anteprima Dati e Ordinamento")
-                    st.write("Qui vedi i sample scelti. Modifica il numero nella colonna 'Ordine' (doppio clic su cella) e clicca sull'intestazione per riordinare l'export. Poi passa al Modulo2 per il report dettagliato.")
+                    st.write("Qui vedi i sample scelti. Modifica il numero nella colonna 'Ordine' (doppio clic su cella) e clicca sull'intestazione per riordinare l'export. Poi passa al modulo2 per il report dettagliato.")
                     
                     if 'order_state' not in st.session_state or set(st.session_state.get('last_selected', [])) != set(selected_unsorted):
                         df_unique = pd.DataFrame({"Name": selected_unsorted})
