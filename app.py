@@ -160,8 +160,8 @@ with tab2:
                 
                 excel_buffer = file_handler.create_excel_download(
                     st.session_state.processed_data['raw_filtered'],
-                    df_means_only,
-                    df_pretty,
+                    st.session_state.selected_samples,
+                    ash_moisture_data,
                     ignore_ash_moisture
                 )
                 
