@@ -41,46 +41,75 @@ with tab1:
                 st.session_state.raw_data = df_raw
                 st.success("File caricati e uniti con successo!")
                 
-                # Visualizza anteprima dei dati grezzi estratti in modo sicuro
-                st.subheader("Anteprima Dati Grezzi (Element % Results)")
-                preview_cols = [c for c in ['Name', 'Weight', 'N', 'C', 'H', 'S'] if c in df_raw.columns]
-                st.dataframe(df_raw[preview_cols].head(), use_container_width=True)
-                
-                # Selezione dei sample da analizzare con Tabella Interattiva (Data Editor)
                 all_samples = df_raw['Name'].dropna().unique().tolist()
                 
-                st.subheader("✅ Selezione e Ordinamento Sample")
-                st.write("Spunta la casella 'Seleziona' per includere il sample. Puoi cambiare il numero nella colonna 'Ordine' e cliccare sull'intestazione per riordinarli in base alle tue preferenze.")
+                st.subheader("✅ 1. Selezione Sample")
+                st.write("Spunta la casella 'Seleziona' per includere il sample nell'analisi. Le caselle sono inizialmente vuote.")
                 
-                # Inizializza o aggiorna il dataframe di selezione in sessione
-                if 'sample_selection_df' not in st.session_state or set(st.session_state.get('last_all_samples', [])) != set(all_samples):
-                    st.session_state.sample_selection_df = pd.DataFrame({
-                        "Seleziona": [True] * len(all_samples),
-                        "Ordine": list(range(1, len(all_samples) + 1)),
+                # INIZIALIZZAZIONE SICURA: previene il salto dello scroll, i doppi click e la perdita di focus
+                if 'selection_state' not in st.session_state or st.session_state.get('last_file') != df_raw.shape[0]:
+                    st.session_state.selection_state = pd.DataFrame({
+                        "Seleziona": [False] * len(all_samples),
                         "Sample": all_samples
                     })
-                    st.session_state.last_all_samples = all_samples
+                    st.session_state.last_file = df_raw.shape[0]
 
-                # Editor tabellare interattivo
-                edited_df = st.data_editor(
-                    st.session_state.sample_selection_df,
+                # Tabella 1: Solo Selezione. L'uso di "key" isola il componente ed evita ricaricamenti molesti
+                edited_selection = st.data_editor(
+                    st.session_state.selection_state,
                     column_config={
-                        "Seleziona": st.column_config.CheckboxColumn("Seleziona", default=True),
-                        "Ordine": st.column_config.NumberColumn("Ordine", help="Cambia il numero per ordinare i sample", min_value=1, step=1),
-                        "Sample": st.column_config.TextColumn("Nome Sample", disabled=True) # Disabilitato per non far modificare accidentalmente il nome
+                        "Seleziona": st.column_config.CheckboxColumn("Seleziona", default=False),
+                        "Sample": st.column_config.TextColumn("Nome Sample", disabled=True)
                     },
                     hide_index=True,
-                    use_container_width=True
+                    use_container_width=True,
+                    key="editor_selezioni"
                 )
                 
-                # Salva le modifiche in sessione
-                st.session_state.sample_selection_df = edited_df
+                # Estraiamo i sample che l'utente ha spuntato
+                selected_unsorted = edited_selection[edited_selection["Seleziona"]]["Sample"].tolist()
                 
-                # Estraiamo solo i sample selezionati e li ordiniamo in base al numero 'Ordine'
-                sorted_df = edited_df[edited_df["Seleziona"] == True].sort_values(by="Ordine")
-                selected = sorted_df["Sample"].tolist()
-                
-                st.session_state.selected_samples = selected
+                # Tabella 2: Anteprima e Ordinamento (visibile solo se ci sono sample selezionati)
+                if selected_unsorted:
+                    st.subheader("🔢 2. Anteprima Dati e Ordinamento")
+                    st.write("Qui vedi i sample scelti. Modifica il numero nella colonna 'Ordine' e clicca sull'intestazione per riordinare l'export.")
+                    
+                    # Aggiorniamo la tabella ordine SOLO se l'utente seleziona/deseleziona qualcosa.
+                    # Questo previene il fastidioso bug della cancellazione del testo mentre l'utente digita il numero.
+                    if 'order_state' not in st.session_state or set(st.session_state.get('last_selected', [])) != set(selected_unsorted):
+                        df_unique = pd.DataFrame({"Name": selected_unsorted})
+                        df_unique["Ordine"] = range(1, len(selected_unsorted) + 1)
+                        
+                        # Aggiungiamo l'anteprima (prendiamo la prima riga utile del sample come contesto)
+                        preview_cols = [c for c in ['Weight', 'N', 'C', 'H', 'S'] if c in df_raw.columns]
+                        df_first_raw = df_raw.drop_duplicates(subset=['Name']).copy()
+                        df_order_preview = pd.merge(df_unique, df_first_raw[['Name'] + preview_cols], on='Name', how='left')
+                        
+                        st.session_state.order_state = df_order_preview
+                        st.session_state.last_selected = selected_unsorted
+                        
+                    # Configurazione colonne: blocchiamo TUTTO tranne la colonna "Ordine"
+                    col_configs = {
+                        "Ordine": st.column_config.NumberColumn("Ordine", min_value=1, step=1),
+                        "Name": st.column_config.TextColumn("Nome Sample", disabled=True)
+                    }
+                    for col in [c for c in ['Weight', 'N', 'C', 'H', 'S'] if c in df_raw.columns]:
+                        col_configs[col] = st.column_config.Column(disabled=True)
+
+                    # Mostriamo la tabella
+                    edited_order = st.data_editor(
+                        st.session_state.order_state,
+                        column_config=col_configs,
+                        hide_index=True,
+                        use_container_width=True,
+                        key="editor_ordine"
+                    )
+                    
+                    # Ordiniamo la lista finale in base al numero inserito dall'utente
+                    st.session_state.selected_samples = edited_order.sort_values(by="Ordine")["Name"].tolist()
+                else:
+                    st.info("👆 Seleziona almeno un sample nella tabella sopra per sbloccare l'anteprima e ordinarli.")
+                    st.session_state.selected_samples = []
 
 # --- TAB 2: Calcoli ---
 with tab2:
