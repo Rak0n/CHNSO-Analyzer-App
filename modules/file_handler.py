@@ -52,53 +52,35 @@ def load_excel_files(uploaded_files):
 
 def load_existing_report(uploaded_file):
     """
-    Legge un report generato dall'app in precedenza ed estrae i dati facendo reverse-engineering.
-    Separa le stringhe 'Media ± SD' dal foglio 3 e prende i parametri avanzati dal foglio 2.
+    Legge un report generato dall'app estraendo i dati grezzi (Foglio 1) e le impostazioni (Foglio 2).
+    Ricalcola tutto in python per evitare il problema delle formule Excel non valutate.
     """
     try:
+        from modules import data_processing # Importiamo il nostro motore matematico
+        
+        # Leggiamo i dati grezzi puri
+        df_raw = pd.read_excel(uploaded_file, sheet_name='1 - Raw Data')
+        # Leggiamo il Foglio 2 solo per recuperare i nomi e le eventuali Umidità/Ceneri
         df_means = pd.read_excel(uploaded_file, sheet_name='2 - Means Only')
-        df_pretty = pd.read_excel(uploaded_file, sheet_name='3 - Summary Formatted')
         
-        stats_data = {'Name': df_means['Name'].tolist()}
+        selected_samples = df_means['Name'].tolist()
         
-        # 1. Estrazione Medie e SD (spacchettando "Media ± SD") dal Foglio 3
-        for el in ['C', 'H', 'N', 'S', 'O']:
-            col_name = f"{el} (%)"
-            means, stds = [], []
-            if col_name in df_pretty.columns:
-                for val in df_pretty[col_name]:
-                    try:
-                        if isinstance(val, str) and '±' in val:
-                            parts = val.split('±')
-                            means.append(float(parts[0].strip().replace(',', '.')))
-                            stds.append(float(parts[1].strip().replace(',', '.')))
-                        else:
-                            means.append(float(val) if pd.notnull(val) else 0.0)
-                            stds.append(0.0)
-                    except:
-                        means.append(0.0)
-                        stds.append(0.0)
-            else:
-                means = [0.0] * len(df_means)
-                stds = [0.0] * len(df_means)
-            
-            stats_data[f"{el}_mean"] = means
-            stats_data[f"{el}_std"] = stds
-            
-        # 2. Estrazione parametri singoli (Umidità, HHV, Rapporti) dal Foglio 2
-        mappings = [
-            ('Moisture (%)', 'Moisture_mean'), ('Ash (%)', 'Ash_mean'),
-            ('HHV (MJ/Kg)', 'HHV_mean'), ('N/C', 'NC_mean'),
-            ('H/C', 'HC_mean'), ('O/C', 'OC_mean')
-        ]
-        
-        for col_excel, col_target in mappings:
-            if col_excel in df_means.columns:
-                stats_data[col_target] = pd.to_numeric(df_means[col_excel], errors='coerce').fillna(0.0).tolist()
-            else:
-                stats_data[col_target] = [0.0] * len(df_means)
+        # Recupero parametri inseriti a mano
+        am_dict = {}
+        ignore_am = True
+        if 'Moisture (%)' in df_means.columns and 'Ash (%)' in df_means.columns:
+            ignore_am = False
+            for _, row in df_means.iterrows():
+                am_dict[row['Name']] = {
+                    'Umidità': float(row['Moisture (%)']) if pd.notnull(row['Moisture (%)']) else 0.0,
+                    'Ceneri': float(row['Ash (%)']) if pd.notnull(row['Ash (%)']) else 0.0
+                }
                 
-        return pd.DataFrame(stats_data)
+        # Ricalcoliamo tutto passando i dati al motore originale! 
+        # Questo garantisce il 100% di precisione saltando il problema delle formule di Excel
+        stats_df, _, _ = data_processing.process_data(df_raw, selected_samples, am_dict, ignore_am)
+        
+        return stats_df
         
     except Exception as e:
         st.error(f"Errore nella lettura del report. Assicurati di aver caricato un report completo a 3 fogli. Dettagli tecnici: {e}")
