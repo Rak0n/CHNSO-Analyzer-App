@@ -40,33 +40,85 @@ def plot_comparison(stats_df, selected_samples):
     fig.update_layout(barmode='group', title="Confronto CHNSO tra Sample", xaxis_title="Sample", yaxis_title="Percentuale Massica (%)", template="plotly_white")
     return fig
 
-# --- 2. Grafici Rapporti Atomici ---
+# --- 2. Diagramma di Van Krevelen (Rapporti Atomici) ---
 def plot_ratios_single(stats_df, sample_name):
     row = stats_df[stats_df['Name'] == sample_name].iloc[0]
-    ratios = ['N/C', 'H/C', 'O/C']
-    vals = [row['NC_mean'], row['HC_mean'], row['OC_mean']]
-    colors = ['#8c564b', '#bcbd22', '#17becf']
+
+    fig = make_subplots(rows=1, cols=2, subplot_titles=("Van Krevelen: H/C vs O/C", "Van Krevelen: H/C vs N/C"))
+
+    # Plot 1: O/C vs H/C
+    fig.add_trace(go.Scatter(
+        x=[row['OC_mean']], y=[row['HC_mean']],
+        mode='markers+text',
+        marker=dict(size=14, color='#1f77b4', line=dict(width=2, color='white')),
+        text=[sample_name], textposition="top center",
+        hovertemplate="<b>%{text}</b><br>O/C: %{x:.3f}<br>H/C: %{y:.3f}<extra></extra>",
+        name="O/C vs H/C"
+    ), row=1, col=1)
+
+    # Plot 2: N/C vs H/C
+    fig.add_trace(go.Scatter(
+        x=[row['NC_mean']], y=[row['HC_mean']],
+        mode='markers+text',
+        marker=dict(size=14, color='#9467bd', line=dict(width=2, color='white')),
+        text=[sample_name], textposition="top center",
+        hovertemplate="<b>%{text}</b><br>N/C: %{x:.3f}<br>H/C: %{y:.3f}<extra></extra>",
+        name="N/C vs H/C"
+    ), row=1, col=2)
+
+    fig.update_layout(title=f"Diagrammi di Van Krevelen: {sample_name}", template="plotly_white", showlegend=False, height=500)
+    fig.update_xaxes(title_text="Rapporto O/C", row=1, col=1)
+    fig.update_yaxes(title_text="Rapporto H/C", row=1, col=1)
+    fig.update_xaxes(title_text="Rapporto N/C", row=1, col=2)
+    fig.update_yaxes(title_text="Rapporto H/C", row=1, col=2)
     
-    fig = go.Figure(data=[
-        go.Bar(x=ratios, y=vals, marker_color=colors, text=[f"{v:.3f}" for v in vals], textposition='auto')
-    ])
-    fig.update_layout(title=f"Rapporti Atomici: {sample_name}", yaxis_title="Valore Rapporto", xaxis_title="Rapporto", template="plotly_white", hovermode="x")
     return fig
 
 def plot_ratios_comparison(stats_df, selected_samples):
-    df = stats_df[stats_df['Name'].isin(selected_samples)]
+    df = stats_df[stats_df['Name'].isin(selected_samples)].copy()
     
-    fig = go.Figure()
-    fig.add_trace(go.Bar(name="N/C", x=df['Name'], y=df['NC_mean'], marker_color='#8c564b', text=[f"{v:.3f}" for v in df['NC_mean']], textposition='none'))
-    fig.add_trace(go.Bar(name="H/C", x=df['Name'], y=df['HC_mean'], marker_color='#bcbd22', text=[f"{v:.3f}" for v in df['HC_mean']], textposition='none'))
-    fig.add_trace(go.Bar(name="O/C", x=df['Name'], y=df['OC_mean'], marker_color='#17becf', text=[f"{v:.3f}" for v in df['OC_mean']], textposition='none'))
+    # Ordiniamo rigidamente il DataFrame affinché la linea colleghi i punti nel tuo ordine scelto
+    df['__sort'] = pd.Categorical(df['Name'], categories=selected_samples, ordered=True)
+    df = df.sort_values('__sort')
+
+    fig = make_subplots(rows=1, cols=2, subplot_titles=("Van Krevelen: H/C vs O/C", "Van Krevelen: H/C vs N/C"))
+
+    # Plot 1: O/C vs H/C (Linee + Marker)
+    fig.add_trace(go.Scatter(
+        x=df['OC_mean'], y=df['HC_mean'],
+        mode='lines+markers+text',
+        marker=dict(size=12, color='#1f77b4', line=dict(width=2, color='white')),
+        line=dict(width=3, color='#1f77b4', dash='dot'),
+        text=df['Name'], textposition="top center",
+        hovertemplate="<b>%{text}</b><br>O/C: %{x:.3f}<br>H/C: %{y:.3f}<extra></extra>",
+        name="O/C vs H/C"
+    ), row=1, col=1)
+
+    # Plot 2: N/C vs H/C (Linee + Marker)
+    fig.add_trace(go.Scatter(
+        x=df['NC_mean'], y=df['HC_mean'],
+        mode='lines+markers+text',
+        marker=dict(size=12, color='#9467bd', line=dict(width=2, color='white')),
+        line=dict(width=3, color='#9467bd', dash='dot'),
+        text=df['Name'], textposition="top center",
+        hovertemplate="<b>%{text}</b><br>N/C: %{x:.3f}<br>H/C: %{y:.3f}<extra></extra>",
+        name="N/C vs H/C"
+    ), row=1, col=2)
+
+    fig.update_layout(
+        title="Confronto Van Krevelen (Percorso Evolutivo / Upgrading)", 
+        template="plotly_white", showlegend=False, height=600, 
+        margin=dict(t=80) # Diamo margine in alto per le etichette di testo
+    )
+    fig.update_xaxes(title_text="Rapporto O/C", row=1, col=1)
+    fig.update_yaxes(title_text="Rapporto H/C", row=1, col=1)
+    fig.update_xaxes(title_text="Rapporto N/C", row=1, col=2)
+    fig.update_yaxes(title_text="Rapporto H/C", row=1, col=2)
     
-    fig.update_layout(barmode='group', title="Confronto Rapporti Atomici", xaxis_title="Sample", yaxis_title="Valore Rapporto", template="plotly_white")
     return fig
 
 # --- 3. Grafici Stacked 100% + HHV ---
 def plot_stacked_single(stats_df, sample_name):
-    # Riusa la logica del confronto passandogli un solo sample
     return plot_stacked_comparison(stats_df, [sample_name])
 
 def plot_stacked_comparison(stats_df, selected_samples):
@@ -76,10 +128,8 @@ def plot_stacked_comparison(stats_df, selected_samples):
     if df.get('Moisture_mean', pd.Series([0])).max() > 0: elements.append('Moisture')
     if df.get('Ash_mean', pd.Series([0])).max() > 0: elements.append('Ash')
     
-    # Creiamo un grafico con asse Y secondario (per HHV)
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
-    # 1. Aggiungiamo le barre impilate per gli elementi
     for el in elements:
         fig.add_trace(go.Bar(
             name=el, x=df['Name'], y=df[f'{el}_mean'], 
@@ -87,7 +137,6 @@ def plot_stacked_comparison(stats_df, selected_samples):
             hovertemplate=f"{el}: %{{y:.2f}}%<extra></extra>"
         ), secondary_y=False)
         
-    # 2. Aggiungiamo la linea con i marcatori per l'HHV sull'asse secondario
     fig.add_trace(go.Scatter(
         name="HHV (MJ/Kg)", x=df['Name'], y=df['HHV_mean'],
         mode='lines+markers', 
@@ -99,15 +148,9 @@ def plot_stacked_comparison(stats_df, selected_samples):
     title = "Composizione 100% & HHV" if len(selected_samples) > 1 else f"Composizione 100% & HHV: {selected_samples[0]}"
     
     fig.update_layout(
-        barmode='stack', 
-        title=title, 
-        xaxis_title="Sample",
-        template="plotly_white",
-        hovermode="x unified", # Mostra tutti i dati della colonna in un unico tooltip
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        barmode='stack', title=title, xaxis_title="Sample", template="plotly_white",
+        hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
-    
-    # Assicuriamoci che l'asse percentuale arrivi a ~105 per non tagliare graficamente il 100%
     fig.update_yaxes(title_text="Percentuale Massica (%)", range=[0, 105], secondary_y=False)
     fig.update_yaxes(title_text="HHV (MJ/Kg)", secondary_y=True, showgrid=False)
     
