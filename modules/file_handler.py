@@ -51,25 +51,70 @@ def load_excel_files(uploaded_files):
     return pd.DataFrame()
 
 def load_existing_report(uploaded_file):
+    """
+    Legge un report generato dall'app estraendo i dati.
+    RIPRISTINATE le righe originali di spacchettamento "Media ± SD" per totale compatibilità.
+    """
     try:
-        from modules import data_processing 
-        df_raw = pd.read_excel(uploaded_file, sheet_name='1 - Raw Data')
         df_means = pd.read_excel(uploaded_file, sheet_name='2 - Means Only')
+        df_pretty = pd.read_excel(uploaded_file, sheet_name='3 - Summary Formatted')
         
-        selected_samples = df_means['Name'].tolist()
+        stats_data = {'Name': df_means['Name'].tolist()}
         
-        am_dict = {}
-        ignore_am = True
-        if 'Moisture (%)' in df_means.columns and 'Ash (%)' in df_means.columns:
-            ignore_am = False
-            for _, row in df_means.iterrows():
-                am_dict[row['Name']] = {
-                    'Umidità': float(row['Moisture (%)']) if pd.notnull(row['Moisture (%)']) else 0.0,
-                    'Ceneri': float(row['Ash (%)']) if pd.notnull(row['Ash (%)']) else 0.0
-                }
+        # 1. Estrazione Medie e SD (spacchettando le stringhe dal Foglio 3)
+        for el in ['C', 'H', 'N', 'S', 'O']:
+            col_name = f"{el} (%)"
+            means, stds = [], []
+            if col_name in df_pretty.columns:
+                for val in df_pretty[col_name]:
+                    try:
+                        if isinstance(val, str) and '±' in val:
+                            parts = val.split('±')
+                            means.append(float(parts[0].strip().replace(',', '.')))
+                            stds.append(float(parts[1].strip().replace(',', '.')))
+                        else:
+                            means.append(float(val) if pd.notnull(val) else 0.0)
+                            stds.append(0.0)
+                    except:
+                        means.append(0.0)
+                        stds.append(0.0)
+            else:
+                means = [0.0] * len(df_means)
+                stds = [0.0] * len(df_means)
+            
+            stats_data[f"{el}_mean"] = means
+            stats_data[f"{el}_std"] = stds
+            
+        # 2. Estrazione parametri base (Umidità e Ceneri) dal Foglio 2
+        mappings = [('Moisture (%)', 'Moisture_mean'), ('Ash (%)', 'Ash_mean')]
+        for col_excel, col_target in mappings:
+            if col_excel in df_means.columns:
+                stats_data[col_target] = pd.to_numeric(df_means[col_excel], errors='coerce').fillna(0.0).tolist()
+            else:
+                stats_data[col_target] = [0.0] * len(df_means)
+
+        # 3. Ricalcolo di sicurezza per HHV e Rapporti Atomici
+        # Garantisce i grafici anche se le formule di Excel non erano state calcolate dall'utente
+        hhv_means, nc_means, hc_means, oc_means = [], [], [], []
+        for i in range(len(stats_data['Name'])):
+            c = stats_data['C_mean'][i]
+            h = stats_data['H_mean'][i]
+            n = stats_data['N_mean'][i]
+            s = stats_data['S_mean'][i]
+            o = stats_data['O_mean'][i]
+            
+            hhv = max(0, 0.3491*c + 1.1783*h + 0.1005*s - 0.1034*o - 0.0151*n)
+            hhv_means.append(hhv)
+            nc_means.append((n/14.007)/(c/12.011) if c > 0 else 0)
+            hc_means.append((h/1.008)/(c/12.011) if c > 0 else 0)
+            oc_means.append((o/16)/(c/12.011) if c > 0 else 0)
+
+        stats_data['HHV_mean'] = hhv_means
+        stats_data['NC_mean'] = nc_means
+        stats_data['HC_mean'] = hc_means
+        stats_data['OC_mean'] = oc_means
                 
-        stats_df, _, _ = data_processing.process_data(df_raw, selected_samples, am_dict, ignore_am)
-        return stats_df
+        return pd.DataFrame(stats_data)
         
     except Exception as e:
         st.error(f"Errore nella lettura del report. Assicurati di aver caricato un report completo a 3 fogli. Dettagli tecnici: {e}")
@@ -77,7 +122,7 @@ def load_existing_report(uploaded_file):
 
 def create_excel_download(df_raw, selected_samples, am_dict, ignore_am):
     from modules import data_processing
-    # Rigeneriamo il dataframe estetico usando Python, aggirando completamente i bug di lingua di Excel!
+    # Usiamo process_data per ottenere le stringhe statiche perfette per il Foglio 3
     _, df_pretty, _ = data_processing.process_data(df_raw, selected_samples, am_dict, ignore_am)
 
     output = io.BytesIO()
@@ -103,7 +148,7 @@ def create_excel_download(df_raw, selected_samples, am_dict, ignore_am):
         num_format = workbook.add_format({'num_format': '0.000'})
         ratio_format = workbook.add_format({'num_format': '0.000'})
         
-        # --- Foglio 2: Means Only (Resta Interattivo) ---
+        # --- Foglio 2: Means Only (Interattivo con Formule Excel) ---
         ws_means = workbook.add_worksheet('2 - Means Only')
         headers_means = ['Name', 'N (%)', 'C (%)', 'H (%)', 'S (%)']
         if not ignore_am: headers_means.extend(['Moisture (%)', 'Ash (%)'])
@@ -141,20 +186,25 @@ def create_excel_download(df_raw, selected_samples, am_dict, ignore_am):
                 ws_means.write_formula(row, adv_start_col+2, f"=IFERROR((D{row_exc}/1.008)/(C{row_exc}/12.011), 0)", ratio_format)
                 ws_means.write_formula(row, adv_start_col+3, f"=IFERROR(({letter_o}{row_exc}/16)/(C{row_exc}/12.011), 0)", ratio_format)
 
-        # --- Foglio 3: Summary Formatted (Dati Statici da Python) ---
-        df_pretty.to_excel(writer, sheet_name='3 - Summary Formatted', index=False)
-        ws_pretty = writer.sheets['3 - Summary Formatted']
+        # --- Foglio 3: Summary Formatted (Dati Statici da Python per evitare Bug Excel) ---
+        ws_pretty = workbook.add_worksheet('3 - Summary Formatted')
+        headers_pretty = df_pretty.columns.tolist()
+        
+        for c_idx, header in enumerate(headers_pretty):
+            ws_pretty.write(0, c_idx, header, header_format)
+            
+        for r_idx, row_data in df_pretty.iterrows():
+            for c_idx, col_name in enumerate(headers_pretty):
+                # Scriviamo il dato statico (es. "10.50 ± 0.05") riga per riga mantenendo la struttura pulita
+                ws_pretty.write(r_idx + 1, c_idx, str(row_data[col_name]))
 
-        # Estetica larghezze colonne e Header Colorati
+        # Estetica larghezze colonne
         for ws in [ws_raw, ws_means, ws_pretty]:
             ws.set_column('A:A', 30)
             ws.set_column('B:Z', 15)
             
         for col_num, value in enumerate(available_cols): 
             ws_raw.write(0, col_num, value, header_format)
-            
-        for col_num, value in enumerate(df_pretty.columns):
-            ws_pretty.write(0, col_num, value, header_format)
 
     output.seek(0)
     return output
