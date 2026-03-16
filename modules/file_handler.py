@@ -51,21 +51,13 @@ def load_excel_files(uploaded_files):
     return pd.DataFrame()
 
 def load_existing_report(uploaded_file):
-    """
-    Legge un report generato dall'app estraendo i dati grezzi (Foglio 1) e le impostazioni (Foglio 2).
-    Ricalcola tutto in python per evitare il problema delle formule Excel non valutate.
-    """
     try:
-        from modules import data_processing # Importiamo il nostro motore matematico
-        
-        # Leggiamo i dati grezzi puri
+        from modules import data_processing 
         df_raw = pd.read_excel(uploaded_file, sheet_name='1 - Raw Data')
-        # Leggiamo il Foglio 2 solo per recuperare i nomi e le eventuali Umidità/Ceneri
         df_means = pd.read_excel(uploaded_file, sheet_name='2 - Means Only')
         
         selected_samples = df_means['Name'].tolist()
         
-        # Recupero parametri inseriti a mano
         am_dict = {}
         ignore_am = True
         if 'Moisture (%)' in df_means.columns and 'Ash (%)' in df_means.columns:
@@ -76,10 +68,7 @@ def load_existing_report(uploaded_file):
                     'Ceneri': float(row['Ash (%)']) if pd.notnull(row['Ash (%)']) else 0.0
                 }
                 
-        # Ricalcoliamo tutto passando i dati al motore originale! 
-        # Questo garantisce il 100% di precisione saltando il problema delle formule di Excel
         stats_df, _, _ = data_processing.process_data(df_raw, selected_samples, am_dict, ignore_am)
-        
         return stats_df
         
     except Exception as e:
@@ -87,11 +76,15 @@ def load_existing_report(uploaded_file):
         return None
 
 def create_excel_download(df_raw, selected_samples, am_dict, ignore_am):
+    from modules import data_processing
+    # Rigeneriamo il dataframe estetico usando Python, aggirando completamente i bug di lingua di Excel!
+    _, df_pretty, _ = data_processing.process_data(df_raw, selected_samples, am_dict, ignore_am)
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
         
-        # Foglio 1
+        # --- Foglio 1: Raw Data ---
         cols_raw = ['Type', 'Name', 'Weight', 'N', 'C', 'H', 'S']
         available_cols = [c for c in cols_raw if c in df_raw.columns]
         df_raw[available_cols].to_excel(writer, sheet_name='1 - Raw Data', index=False)
@@ -107,10 +100,10 @@ def create_excel_download(df_raw, selected_samples, am_dict, ignore_am):
                 current_row += count
 
         header_format = workbook.add_format({'bold': True, 'text_wrap': True, 'valign': 'top', 'fg_color': '#D7E4BC', 'border': 1})
-        num_format = workbook.add_format({'num_format': '0.00'})
+        num_format = workbook.add_format({'num_format': '0.000'})
         ratio_format = workbook.add_format({'num_format': '0.000'})
         
-        # --- Foglio 2 ---
+        # --- Foglio 2: Means Only (Resta Interattivo) ---
         ws_means = workbook.add_worksheet('2 - Means Only')
         headers_means = ['Name', 'N (%)', 'C (%)', 'H (%)', 'S (%)']
         if not ignore_am: headers_means.extend(['Moisture (%)', 'Ash (%)'])
@@ -148,40 +141,20 @@ def create_excel_download(df_raw, selected_samples, am_dict, ignore_am):
                 ws_means.write_formula(row, adv_start_col+2, f"=IFERROR((D{row_exc}/1.008)/(C{row_exc}/12.011), 0)", ratio_format)
                 ws_means.write_formula(row, adv_start_col+3, f"=IFERROR(({letter_o}{row_exc}/16)/(C{row_exc}/12.011), 0)", ratio_format)
 
-        # --- Foglio 3 ---
-        ws_pretty = workbook.add_worksheet('3 - Summary Formatted')
-        headers_pretty = ['Name', 'N (%)', 'C (%)', 'H (%)', 'S (%)', 'O (%)']
-        if not ignore_am: headers_pretty.extend(['Moisture (%)', 'Ash (%)'])
-        for c_idx, header in enumerate(headers_pretty): ws_pretty.write(0, c_idx, header, header_format)
-            
-        for r_idx, sample in enumerate(selected_samples):
-            row, row_exc = r_idx + 1, r_idx + 2
-            ws_pretty.write_string(row, 0, sample)
-            if sample in sample_ranges:
-                start, end = sample_ranges[sample]
-                for c_offset, el in enumerate(['N', 'C', 'H', 'S']):
-                    letter_means = chr(66 + c_offset)
-                    if el in col_letters:
-                        ws_pretty.write_formula(row, c_offset + 1, f'=TEXT(\'2 - Means Only\'!{letter_means}{row_exc}, "0.00") & " ± " & TEXT(IFERROR(STDEV.S(\'1 - Raw Data\'!{col_letters[el]}{start}:{col_letters[el]}{end}), 0), "0.00")')
-                    else:
-                        ws_pretty.write_formula(row, c_offset + 1, f'=TEXT(\'2 - Means Only\'!{letter_means}{row_exc}, "0.00") & " ± 0.00"')
-                
-                letter_o_means = 'H' if not ignore_am else 'F'
-                var_parts = [f"VAR.S('1 - Raw Data'!{col_letters[el]}{start}:{col_letters[el]}{end})" for el in ['N', 'C', 'H', 'S'] if el in col_letters]
-                
-                if var_parts:
-                    ws_pretty.write_formula(row, 5, f'=TEXT(\'2 - Means Only\'!{letter_o_means}{row_exc}, "0.00") & " ± " & TEXT(IFERROR(SQRT({"+".join(var_parts)}), 0), "0.00")')
-                else:
-                    ws_pretty.write_formula(row, 5, f'=TEXT(\'2 - Means Only\'!{letter_o_means}{row_exc}, "0.00") & " ± 0.00"')
-                
-                if not ignore_am:
-                    ws_pretty.write_formula(row, 6, f'=TEXT(\'2 - Means Only\'!F{row_exc}, "0.00")')
-                    ws_pretty.write_formula(row, 7, f'=TEXT(\'2 - Means Only\'!G{row_exc}, "0.00")')
+        # --- Foglio 3: Summary Formatted (Dati Statici da Python) ---
+        df_pretty.to_excel(writer, sheet_name='3 - Summary Formatted', index=False)
+        ws_pretty = writer.sheets['3 - Summary Formatted']
 
+        # Estetica larghezze colonne e Header Colorati
         for ws in [ws_raw, ws_means, ws_pretty]:
             ws.set_column('A:A', 30)
             ws.set_column('B:Z', 15)
-        for col_num, value in enumerate(available_cols): ws_raw.write(0, col_num, value, header_format)
+            
+        for col_num, value in enumerate(available_cols): 
+            ws_raw.write(0, col_num, value, header_format)
+            
+        for col_num, value in enumerate(df_pretty.columns):
+            ws_pretty.write(0, col_num, value, header_format)
 
     output.seek(0)
     return output
