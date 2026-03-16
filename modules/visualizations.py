@@ -46,7 +46,7 @@ def plot_ratios_single(stats_df, sample_name):
 
     fig = make_subplots(rows=1, cols=2, subplot_titles=("Van Krevelen: H/C vs O/C", "Van Krevelen: H/C vs N/C"))
 
-    # Plot 1: O/C vs H/C
+    # Plot 1: O/C vs H/C (Scatter/Pallini)
     fig.add_trace(go.Scatter(
         x=[row['OC_mean']], y=[row['HC_mean']],
         mode='markers+text',
@@ -56,7 +56,7 @@ def plot_ratios_single(stats_df, sample_name):
         name="O/C vs H/C"
     ), row=1, col=1)
 
-    # Plot 2: N/C vs H/C
+    # Plot 2: N/C vs H/C (Scatter/Pallini)
     fig.add_trace(go.Scatter(
         x=[row['NC_mean']], y=[row['HC_mean']],
         mode='markers+text',
@@ -83,7 +83,7 @@ def plot_ratios_comparison(stats_df, selected_samples):
 
     fig = make_subplots(rows=1, cols=2, subplot_titles=("Van Krevelen: H/C vs O/C", "Van Krevelen: H/C vs N/C"))
 
-    # Plot 1: O/C vs H/C (Linee + Marker)
+    # Plot 1: O/C vs H/C (Linee + Marker/Pallini)
     fig.add_trace(go.Scatter(
         x=df['OC_mean'], y=df['HC_mean'],
         mode='lines+markers+text',
@@ -94,7 +94,7 @@ def plot_ratios_comparison(stats_df, selected_samples):
         name="O/C vs H/C"
     ), row=1, col=1)
 
-    # Plot 2: N/C vs H/C (Linee + Marker)
+    # Plot 2: N/C vs H/C (Linee + Marker/Pallini)
     fig.add_trace(go.Scatter(
         x=df['NC_mean'], y=df['HC_mean'],
         mode='lines+markers+text',
