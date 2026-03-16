@@ -50,6 +50,60 @@ def load_excel_files(uploaded_files):
     if all_data: return pd.concat(all_data, ignore_index=True)
     return pd.DataFrame()
 
+def load_existing_report(uploaded_file):
+    """
+    Legge un report generato dall'app in precedenza ed estrae i dati facendo reverse-engineering.
+    Separa le stringhe 'Media ± SD' dal foglio 3 e prende i parametri avanzati dal foglio 2.
+    """
+    try:
+        df_means = pd.read_excel(uploaded_file, sheet_name='2 - Means Only')
+        df_pretty = pd.read_excel(uploaded_file, sheet_name='3 - Summary Formatted')
+        
+        stats_data = {'Name': df_means['Name'].tolist()}
+        
+        # 1. Estrazione Medie e SD (spacchettando "Media ± SD") dal Foglio 3
+        for el in ['C', 'H', 'N', 'S', 'O']:
+            col_name = f"{el} (%)"
+            means, stds = [], []
+            if col_name in df_pretty.columns:
+                for val in df_pretty[col_name]:
+                    try:
+                        if isinstance(val, str) and '±' in val:
+                            parts = val.split('±')
+                            means.append(float(parts[0].strip().replace(',', '.')))
+                            stds.append(float(parts[1].strip().replace(',', '.')))
+                        else:
+                            means.append(float(val) if pd.notnull(val) else 0.0)
+                            stds.append(0.0)
+                    except:
+                        means.append(0.0)
+                        stds.append(0.0)
+            else:
+                means = [0.0] * len(df_means)
+                stds = [0.0] * len(df_means)
+            
+            stats_data[f"{el}_mean"] = means
+            stats_data[f"{el}_std"] = stds
+            
+        # 2. Estrazione parametri singoli (Umidità, HHV, Rapporti) dal Foglio 2
+        mappings = [
+            ('Moisture (%)', 'Moisture_mean'), ('Ash (%)', 'Ash_mean'),
+            ('HHV (MJ/Kg)', 'HHV_mean'), ('N/C', 'NC_mean'),
+            ('H/C', 'HC_mean'), ('O/C', 'OC_mean')
+        ]
+        
+        for col_excel, col_target in mappings:
+            if col_excel in df_means.columns:
+                stats_data[col_target] = pd.to_numeric(df_means[col_excel], errors='coerce').fillna(0.0).tolist()
+            else:
+                stats_data[col_target] = [0.0] * len(df_means)
+                
+        return pd.DataFrame(stats_data)
+        
+    except Exception as e:
+        st.error(f"Errore nella lettura del report. Assicurati di aver caricato un report completo a 3 fogli. Dettagli tecnici: {e}")
+        return None
+
 def create_excel_download(df_raw, selected_samples, am_dict, ignore_am):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -72,14 +126,13 @@ def create_excel_download(df_raw, selected_samples, am_dict, ignore_am):
 
         header_format = workbook.add_format({'bold': True, 'text_wrap': True, 'valign': 'top', 'fg_color': '#D7E4BC', 'border': 1})
         num_format = workbook.add_format({'num_format': '0.00'})
-        ratio_format = workbook.add_format({'num_format': '0.000'}) # 3 decimali per i rapporti
+        ratio_format = workbook.add_format({'num_format': '0.000'})
         
         # --- Foglio 2 ---
         ws_means = workbook.add_worksheet('2 - Means Only')
         headers_means = ['Name', 'N (%)', 'C (%)', 'H (%)', 'S (%)']
         if not ignore_am: headers_means.extend(['Moisture (%)', 'Ash (%)'])
         headers_means.append('O (%)')
-        # Aggiunta nuovi calcoli
         headers_means.extend(['HHV (MJ/Kg)', 'N/C', 'H/C', 'O/C'])
             
         for c_idx, header in enumerate(headers_means):
@@ -108,7 +161,6 @@ def create_excel_download(df_raw, selected_samples, am_dict, ignore_am):
                     adv_start_col = 6
                     letter_o = 'F'
 
-                # Formule Avanzate Interattive! (Con IFERROR per evitare divisioni per zero se Carbonio manca)
                 ws_means.write_formula(row, adv_start_col, f"=MAX(0, 0.3491*C{row_exc}+1.1783*D{row_exc}+0.1005*E{row_exc}-0.1034*{letter_o}{row_exc}-0.0151*B{row_exc})", num_format)
                 ws_means.write_formula(row, adv_start_col+1, f"=IFERROR((B{row_exc}/14.007)/(C{row_exc}/12.011), 0)", ratio_format)
                 ws_means.write_formula(row, adv_start_col+2, f"=IFERROR((D{row_exc}/1.008)/(C{row_exc}/12.011), 0)", ratio_format)
