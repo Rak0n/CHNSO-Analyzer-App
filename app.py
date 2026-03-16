@@ -26,7 +26,7 @@ with col2:
     st.title("CHNSO Analyzer")
     st.markdown("Analisi automatizzata dei dati elementari, calcolo dell'Ossigeno ed esportazione avanzata.")
 
-st.divider() # Una bella linea di separazione prima delle schede
+st.divider()
 
 # Creazione delle schede (Tabs)
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -80,7 +80,7 @@ with tab1:
                 
                 if selected_unsorted:
                     st.subheader("🔢 2. Anteprima Dati e Ordinamento")
-                    st.write("Qui vedi i sample scelti. Modifica il numero nella colonna 'Ordine' (doppio clic su cella) e clicca sull'intestazione per riordinare l'export. Poi passa al modulo2 per il report dettagliato.")
+                    st.write("Qui vedi i sample scelti. Modifica il numero nella colonna 'Ordine' e clicca sull'intestazione per riordinare l'export.")
                     
                     if 'order_state' not in st.session_state or set(st.session_state.get('last_selected', [])) != set(selected_unsorted):
                         df_unique = pd.DataFrame({"Name": selected_unsorted})
@@ -108,7 +108,7 @@ with tab1:
                         key="editor_ordine"
                     )
                     
-                    # FIX 1: Forza la colonna 'Ordine' a essere Numerica, evitando l'ordinamento "1, 10, 11, 2"
+                    # Forza la colonna 'Ordine' a essere Numerica, evitando l'ordinamento testo (1, 10, 2...)
                     edited_order["Ordine"] = pd.to_numeric(edited_order["Ordine"], errors='coerce').fillna(999)
                     
                     st.session_state.selected_samples = edited_order.sort_values(by="Ordine")["Name"].tolist()
@@ -122,7 +122,7 @@ with tab2:
         st.header("Impostazioni Ceneri e Umidità")
         
         ignore_ash_moisture = st.checkbox(
-            "🚫 Trascura Ceneri e Umidità per questa sessione (Calcola O2 solo come 100 - CHNS)", 
+            "🚫 Trascura Ceneri e Umidità per questa sessione (Calcola O solo come 100 - CHNS)", 
             value=False
         )
         
@@ -132,7 +132,7 @@ with tab2:
         )
         
         if st.button("🚀 Esegui Calcoli", type="primary"):
-            with st.spinner("Calcolo Medie, Deviazioni Standard e O2%..."):
+            with st.spinner("Calcolo Medie, Deviazioni Standard e O..."):
                 # Elaborazione dati
                 df_stats, df_pretty, df_means_only = data_processing.process_data(
                     st.session_state.raw_data,
@@ -141,7 +141,7 @@ with tab2:
                     ignore_ash_moisture
                 )
                 
-                # FIX 2: Estraiamo i Dati Grezzi (per Foglio 1) imponendo forzatamente il tuo ordine
+                # Estraiamo i Dati Grezzi (per Foglio 1) imponendo forzatamente il tuo ordine
                 df_raw_filtered = st.session_state.raw_data[st.session_state.raw_data['Name'].isin(st.session_state.selected_samples)].copy()
                 df_raw_filtered['__sort_col'] = pd.Categorical(df_raw_filtered['Name'], categories=st.session_state.selected_samples, ordered=True)
                 df_raw_filtered = df_raw_filtered.sort_values('__sort_col').drop(columns=['__sort_col'])
@@ -158,6 +158,7 @@ with tab2:
                 st.success("Calcoli completati!")
                 st.dataframe(df_pretty, use_container_width=True)
                 
+                # Creazione file Excel Interattivo
                 excel_buffer = file_handler.create_excel_download(
                     st.session_state.processed_data['raw_filtered'],
                     st.session_state.selected_samples,
@@ -178,16 +179,18 @@ with tab2:
 with tab3:
     if st.session_state.processed_data is not None:
         st.header("Analisi Sample Singolo")
-        sample_to_plot = st.selectbox(
-            "Seleziona un Sample da visualizzare:", 
-            options=st.session_state.selected_samples
-        )
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            sample_to_plot = st.selectbox("Seleziona un Sample:", options=st.session_state.selected_samples)
+        with col2:
+            chart_type_single = st.radio("Scegli la visualizzazione:", ["Dati Elementari (CHNSO)", "Parametri Energetici (HHV, Rapporti)"], horizontal=True, key="radio_single")
         
         if sample_to_plot:
-            fig = visualizations.plot_single_sample(
-                st.session_state.processed_data['stats'], 
-                sample_to_plot
-            )
+            if "CHNSO" in chart_type_single:
+                fig = visualizations.plot_single_sample(st.session_state.processed_data['stats'], sample_to_plot)
+            else:
+                fig = visualizations.plot_advanced_single(st.session_state.processed_data['stats'], sample_to_plot)
             st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Esegui i calcoli nella Tab 2 per sbloccare la dashboard.")
@@ -196,17 +199,17 @@ with tab3:
 with tab4:
     if st.session_state.processed_data is not None:
         st.header("Confronto tra Sample")
-        samples_to_compare = st.multiselect(
-            "Seleziona i Sample da confrontare:", 
-            options=st.session_state.selected_samples,
-            default=st.session_state.selected_samples[:3] if len(st.session_state.selected_samples) >= 3 else st.session_state.selected_samples
-        )
+        
+        samples_to_compare = st.multiselect("Seleziona i Sample da confrontare:", options=st.session_state.selected_samples, default=st.session_state.selected_samples[:3] if len(st.session_state.selected_samples) >= 3 else st.session_state.selected_samples)
         
         if samples_to_compare:
-            fig_comp = visualizations.plot_comparison(
-                st.session_state.processed_data['stats'], 
-                samples_to_compare
-            )
+            chart_type_comp = st.radio("Scegli la visualizzazione:", ["Dati Elementari (CHNSO)", "Parametri Energetici (HHV, Rapporti)"], horizontal=True, key="radio_comp")
+            
+            if "CHNSO" in chart_type_comp:
+                fig_comp = visualizations.plot_comparison(st.session_state.processed_data['stats'], samples_to_compare)
+            else:
+                fig_comp = visualizations.plot_advanced_comparison(st.session_state.processed_data['stats'], samples_to_compare)
+            
             st.plotly_chart(fig_comp, use_container_width=True)
     else:
         st.info("Esegui i calcoli nella Tab 2 per sbloccare il confronto.")
