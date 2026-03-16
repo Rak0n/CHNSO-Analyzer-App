@@ -200,7 +200,7 @@ with tab3:
         with col1:
             sample_to_plot = st.selectbox("Seleziona un Sample:", options=st.session_state.selected_samples)
         with col2:
-            chart_type_single = st.radio("Scegli la visualizzazione:", ["Dati Elementari (CHNSO)", "Rapporti Atomici", "Composizione 100% & HHV"], horizontal=True, key="radio_single")
+            chart_type_single = st.radio("Scegli la visualizzazione:", ["Dati Elementari (CHNSO)", "Van Krevelen (Rapporti Atomici)", "Composizione 100% & HHV"], horizontal=True, key="radio_single")
         
         if sample_to_plot:
             if "CHNSO" in chart_type_single:
@@ -220,7 +220,7 @@ with tab4:
         samples_to_compare = st.multiselect("Seleziona i Sample da confrontare:", options=st.session_state.selected_samples, default=st.session_state.selected_samples[:3] if len(st.session_state.selected_samples) >= 3 else st.session_state.selected_samples)
         
         if samples_to_compare:
-            chart_type_comp = st.radio("Scegli la visualizzazione:", ["Dati Elementari (CHNSO)", "Rapporti Atomici", "Composizione 100% & HHV"], horizontal=True, key="radio_comp")
+            chart_type_comp = st.radio("Scegli la visualizzazione:", ["Dati Elementari (CHNSO)", "Van Krevelen (Rapporti Atomici)", "Composizione 100% & HHV"], horizontal=True, key="radio_comp")
             
             if "CHNSO" in chart_type_comp:
                 fig_comp = visualizations.plot_comparison(st.session_state.processed_data['stats'], samples_to_compare)
